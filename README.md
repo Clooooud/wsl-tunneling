@@ -6,12 +6,13 @@ The first implementation targets one configurable WSL distro. It starts `gvforwa
 
 ## Current scope
 
-- CLI commands: `doctor`, `start`, `stop`, `restart`, `status`, `daemon`, `logs`, `install-service`, `uninstall-service`.
+- CLI commands: `doctor`, `start`, `stop`, `restart`, `status`, `tray`, `daemon`, `logs`, `install-service`, `uninstall-service`.
 - Downloads versioned `gvproxy.exe` and `gvforwarder` release assets, or accepts explicit asset URLs.
 - Saves WSL DNS and default route state before start.
 - Replaces `/etc/resolv.conf` with `nameserver 192.168.127.1` while running.
 - Restores DNS and route state on stop.
-- Runs a foreground daemon that supervises and restarts the forwarder.
+- Runs a Windows tray controller with start, stop, config folder, and start-on-boot actions.
+- Keeps a foreground daemon command available for console supervision and troubleshooting.
 
 ## Requirements
 
@@ -23,7 +24,13 @@ The first implementation targets one configurable WSL distro. It starts `gvforwa
 ## Build
 
 ```powershell
-go build -o bin/wsl-tunneling.exe ./cmd/wsl-tunneling
+.\scripts\build.ps1
+```
+
+The default build keeps console support so commands such as `status` and `doctor` print output normally. For a tray-only GUI binary, use:
+
+```powershell
+.\scripts\build.ps1 -GUI
 ```
 
 ## Release
@@ -43,28 +50,30 @@ The release contains:
 
 ## Basic use
 
+The default config path is `%APPDATA%\wsl-tunneling\config.json`. Use `--config` only when you want a different file.
+
 Create a config:
 
 ```powershell
-bin\wsl-tunneling.exe init-config --config $env:APPDATA\wsl-tunneling\config.json
+bin\wsl-tunneling.exe init-config
 ```
 
 Edit the `distro` value, then run diagnostics:
 
 ```powershell
-bin\wsl-tunneling.exe doctor --config $env:APPDATA\wsl-tunneling\config.json
+bin\wsl-tunneling.exe doctor
 ```
 
 Start the tunnel:
 
 ```powershell
-bin\wsl-tunneling.exe start --config $env:APPDATA\wsl-tunneling\config.json
+bin\wsl-tunneling.exe start
 ```
 
 Check from Windows:
 
 ```powershell
-bin\wsl-tunneling.exe status --config $env:APPDATA\wsl-tunneling\config.json
+bin\wsl-tunneling.exe status
 ```
 
 Check from WSL:
@@ -78,21 +87,31 @@ curl https://example.com
 Stop and restore networking:
 
 ```powershell
-bin\wsl-tunneling.exe stop --config $env:APPDATA\wsl-tunneling\config.json
+bin\wsl-tunneling.exe stop
 ```
 
 ## Background mode
 
-Install as a Windows scheduled task that starts the daemon at logon:
+Run the binary without a command to open the tray controller:
 
 ```powershell
-bin\wsl-tunneling.exe install-service --config $env:APPDATA\wsl-tunneling\config.json
+bin\wsl-tunneling.exe
+```
+
+`bin\wsl-tunneling.exe tray` does the same thing explicitly.
+
+The tray menu can start and stop the tunnel, open the config folder, toggle `Start on boot`, and quit the tray process. If the config file does not exist yet, `Open config folder` creates an example config before opening the folder.
+
+Install as a Windows scheduled task that starts the tray at logon:
+
+```powershell
+bin\wsl-tunneling.exe install-service
 ```
 
 Remove the scheduled task:
 
 ```powershell
-bin\wsl-tunneling.exe uninstall-service --config $env:APPDATA\wsl-tunneling\config.json
+bin\wsl-tunneling.exe uninstall-service
 ```
 
 ## Recovery
@@ -100,7 +119,7 @@ bin\wsl-tunneling.exe uninstall-service --config $env:APPDATA\wsl-tunneling\conf
 If WSL networking is left in a bad state, first try:
 
 ```powershell
-bin\wsl-tunneling.exe stop --config $env:APPDATA\wsl-tunneling\config.json
+bin\wsl-tunneling.exe stop
 ```
 
 If that does not restore the route or DNS, use:
@@ -116,4 +135,4 @@ Then start the target distro normally. The tool stores transient state under `/m
 - This is not yet multi-distro aware.
 - ICMP forwarding is limited by `gvisor-tap-vsock`; use TCP checks such as `curl` for validation.
 - Port forwarding and `win-sshproxy` are not part of this MVP.
-- `install-service` currently installs a Windows scheduled task, not a native Service Control Manager service.
+- `install-service` installs a Windows scheduled task, not a native Service Control Manager service.

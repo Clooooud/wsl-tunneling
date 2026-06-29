@@ -1,5 +1,6 @@
 param(
-    [string]$Output = "bin\wsl-tunneling.exe"
+    [string]$Output = "bin\wsl-tunneling.exe",
+    [switch]$GUI
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,4 +22,13 @@ if ($go.PSObject.Properties.Name -contains "Source" -and $go.Source) {
     $goPath = $go.FullName
 }
 
-& $goPath build -trimpath -o $Output .\cmd\wsl-tunneling
+$ldflags = ""
+if ($GUI) {
+    $ldflags = "-H windowsgui"
+}
+
+if ($ldflags) {
+    & $goPath build -trimpath -ldflags $ldflags -o $Output .\cmd\wsl-tunneling
+} else {
+    & $goPath build -trimpath -o $Output .\cmd\wsl-tunneling
+}

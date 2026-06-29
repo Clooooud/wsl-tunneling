@@ -17,22 +17,30 @@ import (
 	"github.com/clooooud/wsl-tunneling/internal/gvisor"
 	"github.com/clooooud/wsl-tunneling/internal/network"
 	"github.com/clooooud/wsl-tunneling/internal/service"
+	"github.com/clooooud/wsl-tunneling/internal/tray"
 	"github.com/clooooud/wsl-tunneling/internal/wsl"
 )
 
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
-	if len(args) == 0 {
+	if len(args) > 0 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
 		usage(stdout)
 		return 0
 	}
 
-	command := args[0]
-	if command == "help" || command == "--help" || command == "-h" {
-		usage(stdout)
-		return 0
+	command := "tray"
+	commandArgs := args
+	if len(args) > 0 {
+		if isCommand(args[0]) {
+			command = args[0]
+			commandArgs = args[1:]
+		} else if !strings.HasPrefix(args[0], "-") {
+			fmt.Fprintf(stderr, "unknown command %q\n\n", args[0])
+			usage(stderr)
+			return 2
+		}
 	}
 
-	cfg, configPath, err := parseConfig(args[1:], stderr)
+	cfg, configPath, err := parseConfig(commandArgs, stderr)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
@@ -53,9 +61,11 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	case "status":
 		return status(ctx, cfg, stdout, stderr)
 	case "doctor":
-		return doctor(ctx, cfg, stdout, stderr)
+		return doctor(ctx, cfg, configPath, stdout, stderr)
 	case "daemon":
 		return runDaemon(cfg, stdout, stderr)
+	case "tray":
+		return runErr(stderr, tray.Run(ctx, cfg, configPath))
 	case "logs":
 		return logs(cfg, stdout, stderr)
 	case "install-service":
@@ -64,10 +74,16 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runErr(stderr, service.Uninstall(ctx, cfg))
 	case "init-config":
 		return runErr(stderr, config.SaveExample(configPath))
+	}
+	return 2
+}
+
+func isCommand(command string) bool {
+	switch command {
+	case "start", "stop", "restart", "status", "doctor", "daemon", "tray", "logs", "install-service", "uninstall-service", "init-config":
+		return true
 	default:
-		fmt.Fprintf(stderr, "unknown command %q\n\n", command)
-		usage(stderr)
-		return 2
+		return false
 	}
 }
 
@@ -138,8 +154,8 @@ func status(ctx context.Context, cfg config.Config, stdout io.Writer, stderr io.
 	return 0
 }
 
-func doctor(ctx context.Context, cfg config.Config, stdout io.Writer, stderr io.Writer) int {
-	fmt.Fprintf(stdout, "config: %s\n", config.DefaultPath())
+func doctor(ctx context.Context, cfg config.Config, configPath string, stdout io.Writer, stderr io.Writer) int {
+	fmt.Fprintf(stdout, "config: %s\n", configPath)
 	fmt.Fprintf(stdout, "distro: %s\n", cfg.Distro)
 	fmt.Fprintf(stdout, "cacheDir: %s\n", cfg.CacheDir)
 	fmt.Fprintf(stdout, "stateDir: %s\n", cfg.StateDir)
@@ -219,32 +235,37 @@ func runErr(stderr io.Writer, err error) int {
 
 func usage(output io.Writer) {
 	exe := filepath.Base(os.Args[0])
-	fmt.Fprintf(output, `%s controls a WSL user-mode network tunnel backed by gvisor-tap-vsock.
-
-Usage:
-  %s <command> [options]
-
-Commands:
-  init-config        Write an example config.json
-  doctor             Check WSL and gvisor prerequisites
-  start              Start the tunnel once
-  stop               Stop the tunnel and restore WSL networking
-  restart            Stop then start
-  status             Print current tunnel status
-  daemon             Run supervised in the foreground
-	logs               Print the daemon log file
-  install-service    Install the daemon as a Windows service
-  uninstall-service  Remove the Windows service
-
-Common options:
-  --config PATH
-  --distro NAME
-  --gvisor-version TAG
-  --cache-dir PATH
-  --state-dir PATH
-  --iface NAME
-  --gvproxy-url URL
-  --gvforwarder-url URL
-
-`, exe, exe)
+	message := strings.Join([]string{
+		fmt.Sprintf("%s controls a WSL user-mode network tunnel backed by gvisor-tap-vsock.", exe),
+		"",
+		"Usage:",
+		fmt.Sprintf("  %s [command] [options]", exe),
+		"",
+		"Running without a command starts the Windows tray controller.",
+		"",
+		"Commands:",
+		"  init-config        Write an example config.json",
+		"  doctor             Check WSL and gvisor prerequisites",
+		"  start              Start the tunnel once",
+		"  stop               Stop the tunnel and restore WSL networking",
+		"  restart            Stop then start",
+		"  status             Print current tunnel status",
+		"  tray               Run the Windows tray controller",
+		"  daemon             Run supervised in the foreground",
+		"  logs               Print the daemon log file",
+		"  install-service    Install a logon scheduled task for the tray",
+		"  uninstall-service  Remove the logon scheduled task",
+		"",
+		"Common options:",
+		fmt.Sprintf("  --config PATH   default: %s", config.DefaultPath()),
+		"  --distro NAME",
+		"  --gvisor-version TAG",
+		"  --cache-dir PATH",
+		"  --state-dir PATH",
+		"  --iface NAME",
+		"  --gvproxy-url URL",
+		"  --gvforwarder-url URL",
+		"",
+	}, "\n")
+	_, _ = fmt.Fprint(output, message)
 }
