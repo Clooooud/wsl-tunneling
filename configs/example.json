@@ -5,6 +5,7 @@
   "subnet": "192.168.127.0/24",
   "gatewayIp": "192.168.127.1",
   "deviceIp": "192.168.127.2",
+  "dnsSearchSuffixes": [],
   "stateDirWsl": "/mnt/wsl/wsl-tunneling",
   "serviceName": "wsl-tunneling",
   "supervisorIntervalSeconds": 10,

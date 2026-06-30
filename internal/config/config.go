@@ -32,6 +32,7 @@ type Config struct {
 	Subnet              string      `json:"subnet"`
 	GatewayIP           string      `json:"gatewayIp"`
 	DeviceIP            string      `json:"deviceIp"`
+	DNSSearchSuffixes   []string    `json:"dnsSearchSuffixes,omitempty"`
 	GVProxyURL          string      `json:"gvproxyUrl,omitempty"`
 	GVForwarderURL      string      `json:"gvforwarderUrl,omitempty"`
 	GitHubAPIBaseURL    string      `json:"githubApiBaseUrl"`
@@ -92,7 +93,13 @@ func Load(path string) (Config, error) {
 func SaveExample(path string) error {
 	cfg := Defaults()
 	cfg.Distro = "Ubuntu"
+	return Save(path, cfg)
+}
 
+func Save(path string, cfg Config) error {
+	if path == "" {
+		path = DefaultPath()
+	}
 	content, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err

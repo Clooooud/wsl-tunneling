@@ -372,7 +372,10 @@ func (a *app) currentManager() network.Manager {
 }
 
 func (a *app) setBusy(name string) {
-	text := fmt.Sprintf("Status: %sing...", name)
+	a.setBusyText(fmt.Sprintf("Status: %sing...", name))
+}
+
+func (a *app) setBusyText(text string) {
 	a.mu.Lock()
 	a.statusText = text
 	a.statusTooltip = ""

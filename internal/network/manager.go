@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/clooooud/wsl-tunneling/internal/config"
+	"github.com/clooooud/wsl-tunneling/internal/dns"
 	"github.com/clooooud/wsl-tunneling/internal/gvisor"
 	"github.com/clooooud/wsl-tunneling/internal/state"
 	"github.com/clooooud/wsl-tunneling/internal/wsl"
@@ -61,8 +62,14 @@ func (manager Manager) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	dnsSearchSuffixes := dns.NormalizeSearchSuffixes(manager.Config.DNSSearchSuffixes)
+	if len(dnsSearchSuffixes) == 0 {
+		if suffixes, err := dns.SearchSuffixes(ctx); err == nil {
+			dnsSearchSuffixes = suffixes
+		}
+	}
 
-	_, err = manager.WSL.Bash(ctx, manager.Config.Distro, startScript(manager.Config, gvproxyPath, gvforwarderPath))
+	_, err = manager.WSL.Bash(ctx, manager.Config.Distro, startScript(manager.Config, gvproxyPath, gvforwarderPath, dnsSearchSuffixes))
 	if err != nil {
 		return err
 	}
@@ -124,7 +131,7 @@ func (manager Manager) Status(ctx context.Context) (Status, error) {
 	return status, nil
 }
 
-func startScript(cfg config.Config, gvproxyPath string, gvforwarderPath string) string {
+func startScript(cfg config.Config, gvproxyPath string, gvforwarderPath string, dnsSearchSuffixes []string) string {
 	return fmt.Sprintf(`
 set -eu
 STATE=%s
@@ -133,6 +140,7 @@ GATEWAY=%s
 DEVICE=%s
 GVPROXY=%s
 GVFORWARDER=%s
+DNS_SEARCH=%s
 mkdir -p "$STATE"
 FORWARDER_RUNNING=0
 if [ -f "$STATE/vm.pid" ]; then
@@ -146,12 +154,18 @@ if [ "$FORWARDER_RUNNING" != "1" ]; then
 	ip link del "$IFACE" >/dev/null 2>&1 || true
 	rm -f "$STATE/vm.pid"
 fi
-cp -f /mnt/wsl/resolv.conf "$STATE/resolv.mnt.orig" 2>/dev/null || true
-if [ -e /etc/resolv.conf ] && [ ! -e "$STATE/resolv.etc.orig" ]; then
+if [ -f /mnt/wsl/resolv.conf ] && [ ! -e "$STATE/resolv.mnt.orig" ] && ! grep -q "^nameserver $GATEWAY$" /mnt/wsl/resolv.conf 2>/dev/null; then
+	cp -f /mnt/wsl/resolv.conf "$STATE/resolv.mnt.orig" 2>/dev/null || true
+fi
+if [ -e /etc/resolv.conf ] && [ ! -e "$STATE/resolv.etc.orig" ] && ! grep -q "^nameserver $GATEWAY$" /etc/resolv.conf 2>/dev/null; then
   cp -a /etc/resolv.conf "$STATE/resolv.etc.orig" 2>/dev/null || true
 fi
 if [ -e /etc/wsl.conf ] && [ ! -e "$STATE/wsl.conf.orig" ]; then
-  cp -a /etc/wsl.conf "$STATE/wsl.conf.orig" 2>/dev/null || true
+	awk '
+		/# wsl-tunneling begin/ { skip = 1; next }
+		/# wsl-tunneling end/ { skip = 0; next }
+		!skip { print }
+	' /etc/wsl.conf > "$STATE/wsl.conf.orig" 2>/dev/null || cp -a /etc/wsl.conf "$STATE/wsl.conf.orig" 2>/dev/null || true
 fi
 ROUTE=$(ip route show default | head -n1 || true)
 if echo "$ROUTE" | grep -q "$GATEWAY" && [ "$FORWARDER_RUNNING" = "1" ]; then
@@ -185,8 +199,16 @@ if %s; then
   fi
 fi
 rm -f /etc/resolv.conf
-printf 'nameserver %%s\n' "$GATEWAY" > /etc/resolv.conf
-printf 'nameserver %%s\n' "$GATEWAY" > /mnt/wsl/resolv.conf 2>/dev/null || true
+write_resolv_conf() {
+	{
+		printf 'nameserver %%s\n' "$GATEWAY"
+		if [ -n "$DNS_SEARCH" ]; then
+			printf 'search %%s\n' "$DNS_SEARCH"
+		fi
+	} > /etc/resolv.conf
+	cp -f /etc/resolv.conf /mnt/wsl/resolv.conf 2>/dev/null || true
+}
+write_resolv_conf
 if ! ip link show "$IFACE" >/dev/null 2>&1; then
   ip tuntap add dev "$IFACE" mode tap
 fi
@@ -237,7 +259,7 @@ if [ "$NEW_FORWARDER" = "1" ]; then
   done
 fi
 configure_network
-`, shellQuote(cfg.StateDirWSL), shellQuote(cfg.InterfaceName), shellQuote(cfg.GatewayIP), shellQuote(cfg.DeviceIP), shellQuote(gvproxyPath), shellQuote(gvforwarderPath), shellBool(cfg.DisableAutoResolv))
+`, shellQuote(cfg.StateDirWSL), shellQuote(cfg.InterfaceName), shellQuote(cfg.GatewayIP), shellQuote(cfg.DeviceIP), shellQuote(gvproxyPath), shellQuote(gvforwarderPath), shellQuote(strings.Join(dnsSearchSuffixes, " ")), shellBool(cfg.DisableAutoResolv))
 }
 
 func stopScript(cfg config.Config) string {
@@ -245,7 +267,8 @@ func stopScript(cfg config.Config) string {
 set +e
 STATE=%s
 IFACE=%s
-restore_eth0_default() {
+TUNNEL_GATEWAY=%s
+eth0_gateway() {
 	CIDR=$(ip -4 -o addr show dev eth0 scope global | awk '{print $4; exit}')
 	if [ -z "$CIDR" ]; then
 		return 1
@@ -263,7 +286,45 @@ EOF
 	GWB=$(( (GW >> 16) & 255 ))
 	GWC=$(( (GW >> 8) & 255 ))
 	GWD=$(( GW & 255 ))
-	ip route replace default via "$GWA.$GWB.$GWC.$GWD" dev eth0 >/dev/null 2>&1
+	echo "$GWA.$GWB.$GWC.$GWD"
+}
+restore_eth0_default() {
+	GW=$(eth0_gateway) || return 1
+	ip route replace default via "$GW" dev eth0 >/dev/null 2>&1
+}
+restore_resolv_conf() {
+	RESTORED_MNT=0
+	if [ -f "$STATE/resolv.mnt.orig" ] && ! grep -q "^nameserver $TUNNEL_GATEWAY$" "$STATE/resolv.mnt.orig" 2>/dev/null; then
+		cp -f "$STATE/resolv.mnt.orig" /mnt/wsl/resolv.conf 2>/dev/null && RESTORED_MNT=1
+	fi
+	if [ "$RESTORED_MNT" != "1" ]; then
+		GW=$(eth0_gateway)
+		if [ -n "$GW" ]; then
+			printf 'nameserver %%s\n' "$GW" > /mnt/wsl/resolv.conf 2>/dev/null || true
+		fi
+	fi
+
+	if [ -e "$STATE/resolv.etc.orig" ] && ! grep -q "^nameserver $TUNNEL_GATEWAY$" "$STATE/resolv.etc.orig" 2>/dev/null; then
+		rm -f /etc/resolv.conf
+		cp -a "$STATE/resolv.etc.orig" /etc/resolv.conf 2>/dev/null || true
+	else
+		rm -f /etc/resolv.conf
+		ln -s /mnt/wsl/resolv.conf /etc/resolv.conf 2>/dev/null || cp -f /mnt/wsl/resolv.conf /etc/resolv.conf 2>/dev/null || true
+	fi
+}
+restore_wsl_conf() {
+	SOURCE=/etc/wsl.conf
+	if [ -e "$STATE/wsl.conf.orig" ]; then
+		SOURCE="$STATE/wsl.conf.orig"
+	fi
+	if [ -e "$SOURCE" ]; then
+		awk '
+			/# wsl-tunneling begin/ { skip = 1; next }
+			/# wsl-tunneling end/ { skip = 0; next }
+			!skip { print }
+		' "$SOURCE" > /tmp/wsl-tunneling.wsl.conf 2>/dev/null && cp -f /tmp/wsl-tunneling.wsl.conf /etc/wsl.conf 2>/dev/null
+		rm -f /tmp/wsl-tunneling.wsl.conf
+	fi
 }
 if [ -f "$STATE/vm.pid" ]; then
   GPID=$(cat "$STATE/vm.pid")
@@ -275,16 +336,8 @@ if [ -f "$STATE/vm.pid" ]; then
   kill -9 "$GPID" >/dev/null 2>&1 || true
 fi
 pkill -f "$STATE/gvforwarder" >/dev/null 2>&1 || true
-if [ -f "$STATE/resolv.mnt.orig" ]; then
-  cp -f "$STATE/resolv.mnt.orig" /mnt/wsl/resolv.conf 2>/dev/null || true
-fi
-if [ -e "$STATE/resolv.etc.orig" ]; then
-  rm -f /etc/resolv.conf
-  cp -a "$STATE/resolv.etc.orig" /etc/resolv.conf 2>/dev/null || true
-fi
-if [ -e "$STATE/wsl.conf.orig" ]; then
-  cp -a "$STATE/wsl.conf.orig" /etc/wsl.conf 2>/dev/null || true
-fi
+restore_resolv_conf
+restore_wsl_conf
 if [ -f "$STATE/route.dat" ]; then
   ip route del default >/dev/null 2>&1 || true
   ROUTE=$(cat "$STATE/route.dat")
@@ -298,7 +351,7 @@ else
 fi
 ip link del "$IFACE" >/dev/null 2>&1 || true
 rm -rf "$STATE"
-`, shellQuote(cfg.StateDirWSL), shellQuote(cfg.InterfaceName))
+`, shellQuote(cfg.StateDirWSL), shellQuote(cfg.InterfaceName), shellQuote(cfg.GatewayIP))
 }
 
 func stabilizeScript(cfg config.Config) string {

@@ -9,7 +9,7 @@ The first implementation targets one configurable WSL distro. It starts `gvforwa
 - CLI commands: `doctor`, `start`, `stop`, `restart`, `status`, `tray`, `daemon`, `logs`, `install-service`, `uninstall-service`.
 - Downloads versioned `gvproxy.exe` and `gvforwarder` release assets, or accepts explicit asset URLs.
 - Saves WSL DNS and default route state before start.
-- Replaces `/etc/resolv.conf` with `nameserver 192.168.127.1` while running.
+- Replaces `/etc/resolv.conf` with `nameserver 192.168.127.1` and Windows DNS search suffixes while running.
 - Restores DNS and route state on stop.
 - Runs a Windows tray controller with start, stop, config folder, and start-on-boot actions.
 - Keeps a foreground daemon command available for console supervision and troubleshooting.
@@ -62,7 +62,7 @@ Create a config:
 bin\wsl-tunneling.exe init-config
 ```
 
-Edit the `distro` value, then run diagnostics:
+Edit the `distro` value if needed, then run diagnostics:
 
 ```powershell
 bin\wsl-tunneling.exe doctor
