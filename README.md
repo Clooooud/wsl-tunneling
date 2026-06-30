@@ -27,10 +27,12 @@ The first implementation targets one configurable WSL distro. It starts `gvforwa
 .\scripts\build.ps1
 ```
 
-The default build keeps console support so commands such as `status` and `doctor` print output normally. For a tray-only GUI binary, use:
+The default build creates `bin\wsl-tunneling.exe`, a single executable that works both ways: double-clicking it opens the tray and hides the private console window Windows creates for Explorer launches, while running it from PowerShell keeps normal console output for commands such as `status`, `doctor`, and `start`.
+
+For a tray-only GUI build, use:
 
 ```powershell
-.\scripts\build.ps1 -GUI
+.\scripts\build.ps1 -GUI -Output bin\wsl-tunneling.exe
 ```
 
 ## Release
@@ -47,6 +49,8 @@ The release contains:
 - `wsl-tunneling-windows-amd64.exe`
 - `wsl-tunneling-windows-arm64.exe`
 - SHA-256 checksum files
+
+The release binaries are console-capable apps that hide their private console window when launched in tray mode from Explorer.
 
 ## Basic use
 
@@ -98,7 +102,7 @@ Run the binary without a command to open the tray controller:
 bin\wsl-tunneling.exe
 ```
 
-`bin\wsl-tunneling.exe tray` does the same thing explicitly.
+`bin\wsl-tunneling.exe tray` does the same thing explicitly from a console.
 
 The tray menu can start and stop the tunnel, open the config folder, toggle `Start on boot`, and quit the tray process. If the config file does not exist yet, `Open config folder` creates an example config before opening the folder.
 

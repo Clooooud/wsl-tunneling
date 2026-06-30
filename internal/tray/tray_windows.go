@@ -12,7 +12,6 @@ import (
 	"image"
 	"image/png"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -103,7 +102,10 @@ type cachedStartOnBootFact struct {
 	Error     string `json:"error,omitempty"`
 }
 
-var currentApp *app
+var (
+	currentApp   *app
+	shellExecute = syscall.NewLazyDLL("shell32.dll").NewProc("ShellExecuteW")
+)
 
 func windowProc(hwnd win.HWND, msg uint32, wparam uintptr, lparam uintptr) uintptr {
 	if currentApp != nil {
@@ -750,9 +752,31 @@ func (a *app) openConfigFolder() {
 		a.showError("Open config failed", err)
 		return
 	}
-	if err := exec.CommandContext(a.ctx, "explorer.exe", dir).Start(); err != nil {
+	if err := openFolder(a.window, dir); err != nil {
 		a.showError("Open config failed", err)
 	}
+}
+
+func openFolder(owner win.HWND, dir string) error {
+	operation := unsafeStringToUTF16("open")
+	target := unsafeStringToUTF16(dir)
+	result, _, callErr := shellExecute.Call(
+		uintptr(owner),
+		uintptr(unsafe.Pointer(&operation[0])),
+		uintptr(unsafe.Pointer(&target[0])),
+		0,
+		0,
+		1,
+	)
+	runtime.KeepAlive(operation)
+	runtime.KeepAlive(target)
+	if result > 32 {
+		return nil
+	}
+	if callErr != syscall.Errno(0) {
+		return callErr
+	}
+	return fmt.Errorf("shell open failed with code %d", result)
 }
 
 func (a *app) showError(title string, err error) {

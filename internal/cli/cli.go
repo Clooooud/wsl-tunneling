@@ -78,6 +78,19 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	return 2
 }
 
+func StartsTray(args []string) bool {
+	if len(args) == 0 {
+		return true
+	}
+	if args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+		return false
+	}
+	if isCommand(args[0]) {
+		return args[0] == "tray"
+	}
+	return strings.HasPrefix(args[0], "-")
+}
+
 func isCommand(command string) bool {
 	switch command {
 	case "start", "stop", "restart", "status", "doctor", "daemon", "tray", "logs", "install-service", "uninstall-service", "init-config":

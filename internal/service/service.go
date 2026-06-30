@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/clooooud/wsl-tunneling/internal/config"
+	"github.com/clooooud/wsl-tunneling/internal/process"
 )
 
 func Install(ctx context.Context, cfg config.Config, configPath string) error {
@@ -27,6 +28,7 @@ func IsInstalled(ctx context.Context, cfg config.Config) (bool, error) {
 		return false, fmt.Errorf("background installation is only supported on Windows")
 	}
 	command := exec.CommandContext(ctx, "reg.exe", "query", autostartKey, "/v", autostartName)
+	process.HideWindow(command)
 	output, err := command.CombinedOutput()
 	if err == nil {
 		return true, nil
@@ -62,6 +64,7 @@ func autostartCommand(exe string, configPath string) string {
 
 func runReg(ctx context.Context, args ...string) error {
 	command := exec.CommandContext(ctx, "reg.exe", args...)
+	process.HideWindow(command)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("reg.exe %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))

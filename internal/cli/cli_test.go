@@ -117,6 +117,30 @@ func TestRunLogsReportsMissingLogFile(t *testing.T) {
 	assertContains(t, stderr, "read logs:")
 }
 
+func TestStartsTray(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "no args", want: true},
+		{name: "tray command", args: []string{"tray"}, want: true},
+		{name: "tray options", args: []string{"--config", "config.json"}, want: true},
+		{name: "help", args: []string{"help"}, want: false},
+		{name: "status", args: []string{"status"}, want: false},
+		{name: "doctor", args: []string{"doctor"}, want: false},
+		{name: "unknown command", args: []string{"nope"}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := StartsTray(tt.args); got != tt.want {
+				t.Fatalf("StartsTray(%v) = %t, want %t", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseConfigAppliesFileAndFlagInputs(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, "config.json")

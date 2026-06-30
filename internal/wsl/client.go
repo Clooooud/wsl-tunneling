@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode/utf16"
+
+	"github.com/clooooud/wsl-tunneling/internal/process"
 )
 
 type Client struct {
@@ -25,6 +27,7 @@ func NewClient() Client {
 
 func (client Client) Run(ctx context.Context, args ...string) (Result, error) {
 	command := exec.CommandContext(ctx, client.Exe, args...)
+	process.HideWindow(command)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	command.Stdout = &stdout

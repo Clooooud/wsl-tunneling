@@ -66,6 +66,10 @@ func (manager Manager) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	_, err = manager.WSL.Bash(ctx, manager.Config.Distro, stabilizeScript(manager.Config))
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -186,21 +190,53 @@ printf 'nameserver %%s\n' "$GATEWAY" > /mnt/wsl/resolv.conf 2>/dev/null || true
 if ! ip link show "$IFACE" >/dev/null 2>&1; then
   ip tuntap add dev "$IFACE" mode tap
 fi
-ip link set dev "$IFACE" address 5a:94:ef:e4:0c:ee mtu 1500 up
-ip addr replace "$DEVICE/24" dev "$IFACE"
-ip route replace default via "$GATEWAY" dev "$IFACE"
+configure_network() {
+	if ! ip link show "$IFACE" >/dev/null 2>&1; then
+		ip tuntap add dev "$IFACE" mode tap
+	fi
+	ip link set dev "$IFACE" address 5a:94:ef:e4:0c:ee mtu 1500 up
+	ip addr replace "$DEVICE/24" dev "$IFACE"
+	ip route replace default via "$GATEWAY" dev "$IFACE"
+}
+NEW_FORWARDER=0
 if [ "$FORWARDER_RUNNING" != "1" ]; then
 	cp -f "$GVFORWARDER" "$STATE/gvforwarder"
 	chmod +x "$STATE/gvforwarder"
-	nohup "$STATE/gvforwarder" -preexisting -iface "$IFACE" -stop-if-exist ignore -url "stdio:$GVPROXY?listen-stdio=accept&ssh-port=-1" > "$STATE/gvforwarder.log" 2> "$STATE/gvforwarder.err" < /dev/null &
-	echo $! > "$STATE/vm.pid"
-	sleep 1
-	if ! kill -0 "$(cat "$STATE/vm.pid")" >/dev/null 2>&1; then
+	STARTED=0
+	: > "$STATE/gvforwarder.log"
+	: > "$STATE/gvforwarder.err"
+	for ATTEMPT in 1 2 3; do
+		echo "starting gvforwarder attempt $ATTEMPT" >> "$STATE/gvforwarder.err"
+		nohup "$STATE/gvforwarder" -preexisting -iface "$IFACE" -stop-if-exist ignore -url "stdio:$GVPROXY?listen-stdio=accept&ssh-port=-1" >> "$STATE/gvforwarder.log" 2>> "$STATE/gvforwarder.err" < /dev/null &
+		echo $! > "$STATE/vm.pid"
+		for _ in 1 2 3; do
+			sleep 1
+			if ! kill -0 "$(cat "$STATE/vm.pid")" >/dev/null 2>&1; then
+				break
+			fi
+		done
+		if kill -0 "$(cat "$STATE/vm.pid")" >/dev/null 2>&1; then
+			STARTED=1
+			break
+		fi
+		pkill -f "$STATE/gvforwarder" >/dev/null 2>&1 || true
+		rm -f "$STATE/vm.pid"
+		sleep 1
+	done
+	if [ "$STARTED" != "1" ]; then
 		echo "gvforwarder did not stay running" >&2
 		cat "$STATE/gvforwarder.err" >&2 2>/dev/null || true
 		exit 42
 	fi
+	NEW_FORWARDER=1
 fi
+if [ "$NEW_FORWARDER" = "1" ]; then
+  for _ in 1 2 3 4 5 6; do
+    configure_network
+    sleep 1
+  done
+fi
+configure_network
 `, shellQuote(cfg.StateDirWSL), shellQuote(cfg.InterfaceName), shellQuote(cfg.GatewayIP), shellQuote(cfg.DeviceIP), shellQuote(gvproxyPath), shellQuote(gvforwarderPath), shellBool(cfg.DisableAutoResolv))
 }
 
@@ -263,6 +299,31 @@ fi
 ip link del "$IFACE" >/dev/null 2>&1 || true
 rm -rf "$STATE"
 `, shellQuote(cfg.StateDirWSL), shellQuote(cfg.InterfaceName))
+}
+
+func stabilizeScript(cfg config.Config) string {
+	return fmt.Sprintf(`
+set -eu
+STATE=%s
+IFACE=%s
+GATEWAY=%s
+DEVICE=%s
+configure_network() {
+	if ! ip link show "$IFACE" >/dev/null 2>&1; then
+		ip tuntap add dev "$IFACE" mode tap
+	fi
+	ip link set dev "$IFACE" address 5a:94:ef:e4:0c:ee mtu 1500 up
+	ip addr replace "$DEVICE/24" dev "$IFACE"
+	ip route replace default via "$GATEWAY" dev "$IFACE"
+}
+if [ -f "$STATE/vm.pid" ] && kill -0 "$(cat "$STATE/vm.pid")" >/dev/null 2>&1; then
+	for _ in 1 2 3 4 5 6 7 8 9 10; do
+		configure_network
+		sleep 1
+	done
+	configure_network
+fi
+`, shellQuote(cfg.StateDirWSL), shellQuote(cfg.InterfaceName), shellQuote(cfg.GatewayIP), shellQuote(cfg.DeviceIP))
 }
 
 func statusScript(cfg config.Config) string {

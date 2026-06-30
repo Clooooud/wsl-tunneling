@@ -1,9 +1,14 @@
 param(
     [string]$Output = "bin\wsl-tunneling.exe",
-    [switch]$GUI
+    [switch]$GUI,
+    [switch]$Console
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($GUI -and $Console) {
+    throw "Use either -GUI or -Console, not both."
+}
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Output) | Out-Null
 
@@ -22,13 +27,22 @@ if ($go.PSObject.Properties.Name -contains "Source" -and $go.Source) {
     $goPath = $go.FullName
 }
 
-$ldflags = ""
-if ($GUI) {
-    $ldflags = "-H windowsgui"
+function Invoke-GoBuild {
+    param(
+        [string]$BuildOutput,
+        [string]$Ldflags
+    )
+
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $BuildOutput) | Out-Null
+    if ($Ldflags) {
+        & $goPath build -trimpath -ldflags $Ldflags -o $BuildOutput .\cmd\wsl-tunneling
+    } else {
+        & $goPath build -trimpath -o $BuildOutput .\cmd\wsl-tunneling
+    }
 }
 
-if ($ldflags) {
-    & $goPath build -trimpath -ldflags $ldflags -o $Output .\cmd\wsl-tunneling
+if ($GUI) {
+    Invoke-GoBuild -BuildOutput $Output -Ldflags "-H windowsgui"
 } else {
-    & $goPath build -trimpath -o $Output .\cmd\wsl-tunneling
+    Invoke-GoBuild -BuildOutput $Output -Ldflags ""
 }
