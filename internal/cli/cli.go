@@ -17,7 +17,6 @@ import (
 	"github.com/clooooud/wsl-tunneling/internal/gvisor"
 	"github.com/clooooud/wsl-tunneling/internal/network"
 	"github.com/clooooud/wsl-tunneling/internal/service"
-	"github.com/clooooud/wsl-tunneling/internal/tray"
 	"github.com/clooooud/wsl-tunneling/internal/wsl"
 )
 
@@ -26,19 +25,18 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		usage(stdout)
 		return 0
 	}
-
-	command := "tray"
-	commandArgs := args
-	if len(args) > 0 {
-		if isCommand(args[0]) {
-			command = args[0]
-			commandArgs = args[1:]
-		} else if !strings.HasPrefix(args[0], "-") {
-			fmt.Fprintf(stderr, "unknown command %q\n\n", args[0])
-			usage(stderr)
-			return 2
-		}
+	if len(args) == 0 {
+		usage(stdout)
+		return 0
 	}
+
+	if !isCommand(args[0]) {
+		fmt.Fprintf(stderr, "unknown command %q\n\n", args[0])
+		usage(stderr)
+		return 2
+	}
+	command := args[0]
+	commandArgs := args[1:]
 
 	cfg, configPath, err := parseConfig(commandArgs, stderr)
 	if err != nil {
@@ -64,8 +62,6 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return doctor(ctx, cfg, configPath, stdout, stderr)
 	case "daemon":
 		return runDaemon(cfg, stdout, stderr)
-	case "tray":
-		return runErr(stderr, tray.Run(ctx, cfg, configPath))
 	case "logs":
 		return logs(cfg, stdout, stderr)
 	case "install-service":
@@ -78,22 +74,9 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	return 2
 }
 
-func StartsTray(args []string) bool {
-	if len(args) == 0 {
-		return true
-	}
-	if args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		return false
-	}
-	if isCommand(args[0]) {
-		return args[0] == "tray"
-	}
-	return strings.HasPrefix(args[0], "-")
-}
-
 func isCommand(command string) bool {
 	switch command {
-	case "start", "stop", "restart", "status", "doctor", "daemon", "tray", "logs", "install-service", "uninstall-service", "init-config":
+	case "start", "stop", "restart", "status", "doctor", "daemon", "logs", "install-service", "uninstall-service", "init-config":
 		return true
 	default:
 		return false
@@ -254,7 +237,7 @@ func usage(output io.Writer) {
 		"Usage:",
 		fmt.Sprintf("  %s [command] [options]", exe),
 		"",
-		"Running without a command starts the Windows tray controller.",
+		"Use wsl-tunneling.exe to open the Windows tray controller.",
 		"",
 		"Commands:",
 		"  init-config        Write an example config.json",
@@ -263,7 +246,6 @@ func usage(output io.Writer) {
 		"  stop               Stop the tunnel and restore WSL networking",
 		"  restart            Stop then start",
 		"  status             Print current tunnel status",
-		"  tray               Run the Windows tray controller",
 		"  daemon             Run supervised in the foreground",
 		"  logs               Print the daemon log file",
 		"  install-service    Install a logon scheduled task for the tray",

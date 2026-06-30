@@ -18,8 +18,19 @@ func TestRunHelpWritesUsageToStdout(t *testing.T) {
 		t.Fatalf("Run() code = %d, want 0", code)
 	}
 	assertContains(t, stdout, "Usage:")
-	assertContains(t, stdout, "Running without a command starts the Windows tray controller.")
+	assertContains(t, stdout, "Use wsl-tunneling.exe to open the Windows tray controller.")
 	assertContains(t, stdout, "init-config")
+	assertNotContains(t, stdout, "  tray")
+	assertEmpty(t, "stderr", stderr)
+}
+
+func TestRunWithoutCommandWritesUsageToStdout(t *testing.T) {
+	code, stdout, stderr := runCLI(t)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0", code)
+	}
+	assertContains(t, stdout, "Usage:")
 	assertEmpty(t, "stderr", stderr)
 }
 
@@ -117,28 +128,14 @@ func TestRunLogsReportsMissingLogFile(t *testing.T) {
 	assertContains(t, stderr, "read logs:")
 }
 
-func TestStartsTray(t *testing.T) {
-	tests := []struct {
-		name string
-		args []string
-		want bool
-	}{
-		{name: "no args", want: true},
-		{name: "tray command", args: []string{"tray"}, want: true},
-		{name: "tray options", args: []string{"--config", "config.json"}, want: true},
-		{name: "help", args: []string{"help"}, want: false},
-		{name: "status", args: []string{"status"}, want: false},
-		{name: "doctor", args: []string{"doctor"}, want: false},
-		{name: "unknown command", args: []string{"nope"}, want: false},
-	}
+func TestRunTrayCommandIsUnknown(t *testing.T) {
+	code, stdout, stderr := runCLI(t, "tray")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := StartsTray(tt.args); got != tt.want {
-				t.Fatalf("StartsTray(%v) = %t, want %t", tt.args, got, tt.want)
-			}
-		})
+	if code != 2 {
+		t.Fatalf("Run() code = %d, want 2", code)
 	}
+	assertEmpty(t, "stdout", stdout)
+	assertContains(t, stderr, `unknown command "tray"`)
 }
 
 func TestParseConfigAppliesFileAndFlagInputs(t *testing.T) {
@@ -213,6 +210,13 @@ func assertContains(t *testing.T, got string, want string) {
 	t.Helper()
 	if !strings.Contains(got, want) {
 		t.Fatalf("output = %q, want substring %q", got, want)
+	}
+}
+
+func assertNotContains(t *testing.T, got string, unwanted string) {
+	t.Helper()
+	if strings.Contains(got, unwanted) {
+		t.Fatalf("output = %q, unwanted substring %q", got, unwanted)
 	}
 }
 

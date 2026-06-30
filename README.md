@@ -24,26 +24,31 @@ WSL shares its network namespace across distros, so the network interface can be
 
 ## Install
 
-Download the Windows executable from the GitHub Release for your architecture:
+Download the Windows zip from the GitHub Release for your architecture:
 
-- `wsl-tunneling-windows-amd64.exe`
-- `wsl-tunneling-windows-arm64.exe`
+- `wsl-tunneling-windows-amd64.zip`
+- `wsl-tunneling-windows-arm64.zip`
 
-Put it somewhere stable, for example:
+Extract the zip somewhere stable. It contains two files:
+
+- `wsl-tunneling.exe`: the tray app. Double-click this one.
+- `wsl-tunneling-cli.exe`: the PowerShell/cmd command app.
+
+For example:
 
 ```powershell
 mkdir $env:LOCALAPPDATA\wsl-tunneling
-copy .\wsl-tunneling-windows-amd64.exe $env:LOCALAPPDATA\wsl-tunneling\wsl-tunneling.exe
+Expand-Archive .\wsl-tunneling-windows-amd64.zip $env:LOCALAPPDATA\wsl-tunneling -Force
 ```
 
 Double-click `wsl-tunneling.exe` to open the tray app. No terminal window should stay open.
 
 ## First Setup
 
-Open PowerShell in the folder containing `wsl-tunneling.exe`, then create the default config:
+Open PowerShell in the folder containing the two executables, then create the default config:
 
 ```powershell
-.\wsl-tunneling.exe init-config
+.\wsl-tunneling-cli.exe init-config
 ```
 
 The config is written to:
@@ -65,7 +70,7 @@ The generated config includes the other defaults, so usually only `distro` needs
 Run a quick check:
 
 ```powershell
-.\wsl-tunneling.exe doctor
+.\wsl-tunneling-cli.exe doctor
 ```
 
 ## Use The Tray App
@@ -87,13 +92,15 @@ Right-click the tray icon to open the menu:
 To enable startup at logon from PowerShell:
 
 ```powershell
-.\wsl-tunneling.exe install-service
+.\wsl-tunneling-cli.exe install-service
 ```
+
+This registers `wsl-tunneling.exe`, the tray app, at Windows logon. Keep both executables in the same folder.
 
 To remove startup at logon:
 
 ```powershell
-.\wsl-tunneling.exe uninstall-service
+.\wsl-tunneling-cli.exe uninstall-service
 ```
 
 ## Useful Commands
@@ -101,37 +108,37 @@ To remove startup at logon:
 Start the tunnel:
 
 ```powershell
-.\wsl-tunneling.exe start
+.\wsl-tunneling-cli.exe start
 ```
 
 Check status:
 
 ```powershell
-.\wsl-tunneling.exe status
+.\wsl-tunneling-cli.exe status
 ```
 
 Stop and restore WSL networking:
 
 ```powershell
-.\wsl-tunneling.exe stop
+.\wsl-tunneling-cli.exe stop
 ```
 
 Restart:
 
 ```powershell
-.\wsl-tunneling.exe restart
+.\wsl-tunneling-cli.exe restart
 ```
 
 Show logs:
 
 ```powershell
-.\wsl-tunneling.exe logs
+.\wsl-tunneling-cli.exe logs
 ```
 
 You can also override the config path when testing:
 
 ```powershell
-.\wsl-tunneling.exe --config C:\path\to\config.json status
+.\wsl-tunneling-cli.exe status --config C:\path\to\config.json
 ```
 
 ## Check From WSL
@@ -167,7 +174,7 @@ Most users only need to set `distro`.
 If WSL networking is left in a bad state, first run:
 
 ```powershell
-.\wsl-tunneling.exe stop
+.\wsl-tunneling-cli.exe stop
 ```
 
 If DNS or routes are still wrong, restart WSL:
@@ -193,18 +200,22 @@ Requirements:
 
 - Go 1.22 or newer.
 
-Build the default console-capable executable:
+Build both executables:
 
 ```powershell
 .\scripts\build.ps1
 ```
 
-This creates `bin\wsl-tunneling.exe`. It works both ways: double-clicking opens the tray and hides the private Explorer console window, while PowerShell commands still print output normally.
+This creates:
 
-For a tray-only GUI build:
+- `bin\wsl-tunneling.exe`: GUI tray app.
+- `bin\wsl-tunneling-cli.exe`: console command app.
+
+To build only one side:
 
 ```powershell
 .\scripts\build.ps1 -GUI -Output bin\wsl-tunneling.exe
+.\scripts\build.ps1 -CLI -Output bin\wsl-tunneling-cli.exe
 ```
 
 Run tests:
@@ -222,4 +233,4 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The release contains Windows binaries for amd64 and arm64 plus SHA-256 checksum files.
+The release contains one zip per Windows architecture. Each zip contains `wsl-tunneling.exe` and `wsl-tunneling-cli.exe`, plus SHA-256 checksum files for the zips.

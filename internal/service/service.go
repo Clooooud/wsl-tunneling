@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -20,6 +21,7 @@ func Install(ctx context.Context, cfg config.Config, configPath string) error {
 	if err != nil {
 		return err
 	}
+	exe = trayExecutable(exe)
 	return runReg(ctx, "add", autostartKey, "/v", autostartName, "/t", "REG_SZ", "/d", autostartCommand(exe, configPath), "/f")
 }
 
@@ -60,6 +62,28 @@ func autostartCommand(exe string, configPath string) string {
 		command = fmt.Sprintf("%s --config \"%s\"", command, configPath)
 	}
 	return command
+}
+
+func trayExecutable(exe string) string {
+	dir := filepath.Dir(exe)
+	ext := filepath.Ext(exe)
+	base := strings.TrimSuffix(filepath.Base(exe), ext)
+	trayBase := strings.Replace(base, "-cli-", "-", 1)
+	if trayBase == base {
+		var ok bool
+		trayBase, ok = strings.CutSuffix(base, "-cli")
+		if !ok {
+			return exe
+		}
+	}
+	if trayBase == "" {
+		return exe
+	}
+	candidate := filepath.Join(dir, trayBase+ext)
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate
+	}
+	return exe
 }
 
 func runReg(ctx context.Context, args ...string) error {
